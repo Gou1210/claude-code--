@@ -1,25 +1,5 @@
 # 23. Advanced Tips：高手技巧、上下文、委派、重启与提效策略
 
-## 重要程度
-**A 级** - 强烈建议掌握。这一章不是“再学几个功能”，而是学真正把 Claude Code 用稳、用久、用到高质量输出的高手习惯。
-
-## 学习目标
-- 理解高手技巧的核心不是“花式提示词”，而是上下文预算、验证闭环、任务切分和重启策略
-- 学会区分什么该放进 `CLAUDE.md`，什么该做成 skill，什么该用 hook 强制执行
-- 知道什么时候该继续当前 session，什么时候该 `/clear`，什么时候该“写交接文档后重开”
-- 知道什么时候值得委派给 subagent / agent team，什么时候反而会徒增复杂度
-
-## 学什么
-- Anthropic 官方最新 `Best Practices`、`Skills`、`Hooks`、`MCP`、`Security`、`Auto mode`、`Agent teams`
-- Anthropic 工程博客里关于 context engineering、sandboxing、long-running harness 的实战结论
-- 英文开发者圈里少数真正被反复验证的经验总结，尤其是 Shrivu Shankar、Simon Willison 这一类实践者的提炼
-
-## 你需要掌握
-- 高手最在意的不是“这句提示词够不够神”，而是 **上下文是不是干净、任务是不是可验证、代理是不是被正确约束**
-- `CLAUDE.md` 适合放长期稳定事实；流程、剧本、检查清单，更适合 skills 或 hooks
-- `/compact` 不是银弹；很多长任务真正稳的做法是 **外部化交接 + 新 session 重启**
-- 多代理不是默认更高级；只有在任务真的可并行、且并行收益大于协调成本时才值得上
-
 ## 一、先纠正一个误区：高手技巧不是“神秘提示词”
 截至 **2026-04-25**，官方和高质量实践者给出的共识都很一致：
 
