@@ -1,160 +1,115 @@
 # 6. Memory：CLAUDE.md、auto memory 与 `.claude/` 目录
 
 ## 重要程度
-**S 级** - 必须掌握。不会配 memory，就会不停重复解释项目背景；配错了，又会把上下文塞满。
+**S 级** - 必须掌握。Memory 决定 Claude Code 每次进入项目时“先知道什么”。写得好，可以少解释很多背景；写得差，会把上下文塞满，还会不断误导它。
 
 ## 学习目标
-- 理解 Claude Code 如何跨 session 记住项目
-- 分清 `CLAUDE.md`、auto memory、rules、skills、settings 的职责边界
-- 知道 `.claude/` 目录里哪些东西属于“记忆层”，哪些属于“配置层”或“扩展层”
+- 知道什么内容值得长期记住，什么不该常驻
+- 分清 `CLAUDE.md`、auto memory、rules、settings、skills 的边界
+- 能为一个真实项目写出简洁、可维护的 memory
 
-## 先纠正一个常见误区
-很多人把“Claude 记忆”理解成“它真的永久记住了一切”。
+## 先建立一个场景
+你接手一个项目，每次让 Claude Code 改代码，都要重复说明：
+- 项目怎么启动
+- 测试该跑哪条命令
+- 哪些目录不能乱动
+- 这个项目不用某个库或某种写法
 
-不是。
+如果这些话每次都靠聊天补充，问题有三个：
+- 容易漏
+- 占上下文
+- 换一个 session 又要重说
 
-Claude Code 的 memory 更接近：
-- 你写给它的长期说明书
-- 它为自己记下的工作笔记
+Memory 要解决的不是“让 Claude 永久记住一切”，而是把稳定、重复、对当前项目重要的信息，在 session 开始时自动交给它。
 
-而且它们本质上都是 **上下文输入**，不是硬性配置。
+## 一、Memory 不是强制配置
+这是最容易误解的地方。
 
-这意味着：
-- 写得清楚，Claude 更稳定
-- 写得含糊、矛盾、过长，Claude 就更容易跑偏
-- 需要强制执行的东西，应该交给 settings、permissions、hooks，而不是只靠 memory
+`CLAUDE.md`、auto memory、rules 本质上都是上下文输入。它们能指导 Claude，但不能像权限、hooks、sandbox 那样强制拦截行为。
 
-## 学什么
-- `CLAUDE.md` 是什么
-- auto memory 是什么
-- `CLAUDE.local.md` 的用途
-- `.claude/` 目录里常见内容
-- `.claude/rules/` 的价值
-- `#` 快捷写入与 `/memory` 管理
+所以判断标准很简单：
+- 想让 Claude 知道：写 memory
+- 想让 Claude 必须遵守：写 settings、permissions 或 hooks
+- 想让 Claude 按需执行一套流程：写 skill
 
-## 你需要掌握
-- 每个新 session 都会从 fresh context 开始，但 `CLAUDE.md` 和 auto memory 会再次注入
-- `CLAUDE.md` 由你写，适合长期规则、项目事实、构建命令、架构说明
-- auto memory 由 Claude 自动积累，适合“你多次纠正后，它自己学到的规律”
-- 两者都不是强制执行层
-- `.claude/` 不只是放 memory，它还是 Claude Code 的项目级扩展与配置目录
+例如：
+- “本项目使用 pnpm，不要用 npm”可以写进 `CLAUDE.md`
+- “禁止读取 `.env`”不应该只写进 `CLAUDE.md`，应该放进权限规则
+- “发布前按 8 步检查”更适合做成 skill，而不是每次启动都加载
 
-## 一、先把“记忆层”拆开看
-截至 **2026-04-25**，Claude Code 的项目记忆至少要分成四类：
+## 二、`CLAUDE.md` 适合放什么
+`CLAUDE.md` 是你写给 Claude 的项目说明书。它适合放稳定、长期、每次都可能用到的信息。
 
-### 1. `CLAUDE.md`
-你手写的长期说明书。
+最常见的内容是：
+- 项目是什么，核心目录在哪里
+- 常用开发、测试、构建命令
+- 编码风格和命名约定
+- 关键业务边界
+- 改动后的验证要求
+- 明确禁止的低级错误
 
-适合放：
-- 项目结构
-- 代码规范
-- 构建、测试、lint 命令
-- 常见工作流
-- 重要业务约束
-- “不要这样做”的规则
+一个好的 `CLAUDE.md` 不追求全面，而追求“开局有用”。
 
-### 2. auto memory
-Claude 自动为自己记录的工作笔记。
+## 三、真实场景：新项目第一版 memory 怎么写
+假设你刚把 Claude Code 接入一个前端项目，不要一上来写长篇背景。先写这几块就够：
 
-适合积累：
-- 你经常纠正它的偏好
-- 调试时发现的关键线索
-- 某个 worktree 下常用的命令或约定
+```md
+# Project Overview
+- This is a React admin dashboard.
+- Main app code lives in `src/`.
+- API client lives in `src/api/`.
 
-### 3. `CLAUDE.local.md`
-当前项目、当前用户的私有补充说明。
+# Commands
+- Install: `pnpm install`
+- Dev: `pnpm dev`
+- Typecheck: `pnpm typecheck`
+- Test: `pnpm test`
 
-适合：
-- 不想提交到仓库的个人偏好
-- 本地测试地址
-- 个人调试习惯
+# Coding Rules
+- Use existing component patterns in `src/components/`.
+- Do not introduce new UI libraries without asking.
+- Keep behavior changes covered by tests when possible.
 
-### 4. `.claude/rules/`
-把大而杂的长期规则拆成多个文件，并且可以按路径触发。
+# Verification
+- For logic changes, run related tests.
+- For UI changes, run typecheck and inspect the affected page.
+```
 
-适合：
-- 只对某些目录或文件类型生效的规则
-- 大项目的模块化说明
-- 团队维护多份主题规则，而不是把所有内容都塞进一个超长 `CLAUDE.md`
+这类 memory 的价值在于：Claude 不需要每次重新问“怎么跑项目”“组件放哪”“改完怎么验”。
 
-## 二、`CLAUDE.md` 和 auto memory 到底有什么区别
-最简单的理解是：
+## 四、`CLAUDE.md` 不要写成百科
+很多人一开始觉得“多写一点更稳”，结果正好相反。
 
-- `CLAUDE.md`：你写给 Claude 的“主动指令”
-- auto memory：Claude 给自己写的“经验笔记”
+不适合常驻的内容包括：
+- 大段 API 文档
+- 一次性排障记录
+- 低频发布流程
+- 只有某个目录才需要的规则
+- Claude 读代码就能看出来的事实
 
-你可以这样分：
+原因很直接：`CLAUDE.md` 会进入上下文。内容越长，每个 session 开局越重，真正重要的规则越容易被淹没。
 
-### 更适合写进 `CLAUDE.md` 的内容
-- 明确、稳定、需要每次都知道的规则
-- 新同事也应该知道的项目信息
-- 可验证的流程约束
-- 目录结构、命名规范、测试入口
+经验上，第一版尽量控制在短文档范围内。先保证它准确、简洁，再逐步补充高频规则。
 
-### 更适合让 auto memory 自己积累的内容
-- 你的个人偏好被反复纠正后形成的模式
-- 某次排障里发现的有效线索
-- “这个仓库通常这样排查更快”之类经验型信息
+## 五、auto memory 适合记什么
+auto memory 更像 Claude 给自己写的经验笔记。
 
-一句话判断：
+它适合沉淀这些信息：
+- 你反复纠正过的个人偏好
+- 某个仓库里常见的排查入口
+- 多次任务里都出现过的局部经验
+- “下次遇到类似问题先看哪里”的线索
 
-**你希望它“从第一天就知道”的，写进 `CLAUDE.md`；你希望它“做着做着学会”的，交给 auto memory。**
+它不适合承担团队规范。因为 auto memory 更偏个人和会话演化，不应该成为项目事实的唯一来源。
 
-## 三、`CLAUDE.md` 不是越长越好
-这是第一个实际坑。
+一句话区分：
 
-官方文档给出的倾向非常明确：
-- `CLAUDE.md` 最好保持具体、简洁、结构化
-- 经验上应尽量控制在 200 行以内
+**从第一天就必须知道的，写进 `CLAUDE.md`；做项目过程中逐渐学到的，交给 auto memory。**
 
-原因不是美观，而是上下文成本。
+## 六、`.claude/` 目录不是只有 memory
+`.claude/` 更像 Claude Code 的项目控制中心。
 
-`CLAUDE.md` 会在 session 启动时进入上下文。如果你把一堆低频参考资料、长篇背景文档、接口细节全塞进去，相当于每个任务开局先背一大包无关信息。
-
-所以：
-- 长期事实放 `CLAUDE.md`
-- 大段参考材料放 skill 支持文件
-- 按目录才需要的规则放 `.claude/rules/`
-
-## 四、`CLAUDE.md` 放在哪
-这一点很多人只知道项目根目录，其实不止。
-
-### 常见位置
-- `./CLAUDE.md`
-- `./.claude/CLAUDE.md`
-- `~/.claude/CLAUDE.md`
-- `./CLAUDE.local.md`
-- 组织级 managed `CLAUDE.md`
-
-### 你可以这样理解它们的作用域
-- 用户级：`~/.claude/CLAUDE.md`
-  适合你的全局个人偏好
-- 项目级：`./CLAUDE.md` 或 `./.claude/CLAUDE.md`
-  适合团队共享的项目规则
-- 本地项目级：`./CLAUDE.local.md`
-  适合你自己在这个项目里的私有偏好
-- 组织级 managed `CLAUDE.md`
-  适合公司统一规则和合规要求
-
-## 五、Claude 是怎么发现这些 memory 的
-不是只读当前目录那一个文件。
-
-Claude Code 会沿着当前工作目录向上查找 `CLAUDE.md` / `CLAUDE.local.md`。  
-如果你在子目录启动，它可能同时读到：
-- 当前目录的 `CLAUDE.md`
-- 上层目录的 `CLAUDE.md`
-- 对应位置的 `CLAUDE.local.md`
-
-另外，当前工作目录以下子树里的 `CLAUDE.md` 不是一开始全部加载，而是通常等 Claude 真读到那个子树下的文件时再按需注入。
-
-这也是为什么：
-- 大仓库里要小心祖先目录的 `CLAUDE.md`
-- 按路径拆 rules 常常比不断膨胀根级 `CLAUDE.md` 更稳
-
-## 六、`.claude/` 目录不要只理解成“放记忆”
-这一章标题里专门写 `.claude/`，就是因为它不是一个单一用途目录。
-
-常见结构可以这样记：
+常见结构是：
 
 ```text
 .claude/
@@ -166,153 +121,94 @@ Claude Code 会沿着当前工作目录向上查找 `CLAUDE.md` / `CLAUDE.local.
 └── settings.local.json
 ```
 
-其中：
-- `CLAUDE.md` / `rules/`：偏“记忆与说明”
-- `skills/` / `agents/`：偏“扩展能力”
-- `settings*.json`：偏“硬配置”
+它们的职责不同：
+- `CLAUDE.md` 和 `rules/`：告诉 Claude 应该知道什么
+- `skills/`：封装可复用流程
+- `agents/`：封装子代理角色
+- `settings*.json`：控制权限、hooks、环境变量、默认模式
 
-所以 `.claude/` 更像 Claude Code 的项目控制中心，而不只是记忆文件夹。
+不要把所有问题都塞进 memory。memory 是说明层，不是配置层，也不是自动化层。
 
-## 七、`.claude/rules/` 是大项目真正该重视的能力
-很多初学者只会写一个越来越大的 `CLAUDE.md`，这在小项目里还行，在大项目里很快失控。
+## 七、大项目应该用 rules 拆分
+当 `CLAUDE.md` 开始变长，通常说明你需要拆。
 
-更好的方式是：
-- 在 `.claude/rules/` 里按主题拆文件
-- 对只影响某部分代码的规则加 `paths:` frontmatter
+适合拆到 `.claude/rules/` 的内容：
+- 只对前端目录生效的组件规则
+- 只对后端目录生效的 API 规则
+- 只对测试文件生效的断言风格
+- 安全、性能、迁移等主题规则
 
-这样带来的好处有两个：
+这样做的好处是：
+- 根级 `CLAUDE.md` 保持短
+- 规则按主题维护
+- 路径相关规则可以在需要时再加载，减少上下文负担
 
-### 1. 结构更清楚
-例如拆成：
-- `testing.md`
-- `security.md`
-- `frontend/react.md`
-- `backend/api.md`
+场景判断很简单：如果一条规则只对一部分文件有意义，不要放进总纲。
 
-### 2. 上下文更省
-带 `paths:` 的规则不是每次启动都全量常驻，而是在 Claude 真接触到匹配文件时再加载。
+## 八、`CLAUDE.local.md` 放个人私有信息
+`CLAUDE.local.md` 适合本机、本项目、不可共享的补充说明。
 
-这就是为什么 rules 比“超长总纲式 `CLAUDE.md`”更适合复杂项目。
-
-## 八、`@path` 导入是组织 memory 的重要手段
-`CLAUDE.md` 可以通过 `@path/to/file` 导入其他文件。
-
-它适合解决两个问题：
-
-### 1. 复用已有文档
-如果仓库里已经有：
-- `README`
-- 架构文档
-- `AGENTS.md`
-
-就没必要重复抄写，可以在 `CLAUDE.md` 里导入。
-
-### 2. 跨 worktree 共享你的私有偏好
-如果你有多个 git worktree，而某些个人偏好不想每个 worktree 都手动建一份 `CLAUDE.local.md`，可以改成导入家目录下的私有说明文件。
-
-## 九、`CLAUDE.local.md` 怎么用才合理
-它不是“默认首选”，而是“本项目、仅自己、可不入库”的补充层。
-
-适合放：
-- 本地调试地址
-- 私有测试数据说明
-- 你个人的输出偏好
-- 不适合提交到仓库的备注
+例如：
+- 本地测试账号说明
+- 私有调试地址
+- 个人偏好的临时命令
+- 不适合提交到仓库的路径
 
 不适合放：
-- 团队共享规范
-- 必须所有人都遵守的约束
-- 影响 CI / 构建 / 权限 的硬配置
+- 团队共同规范
+- 构建必须依赖的规则
+- 权限和安全边界
 
-## 十、如何操作这些 memory
-两个高频入口最重要：
+团队应该依赖可提交的项目 memory 和 settings，而不是某个人机器上的 local 文件。
 
-### `#` 快捷写入
-输入以 `#` 开头时，Claude Code 会把它当作“我要记下来”的内容，并提示写入哪个 memory 文件。
+## 九、什么时候该停下来，不再加 memory
+遇到下面情况，就不要继续往 `CLAUDE.md` 里塞：
+- 内容只在少数任务里用到
+- 内容更像一套步骤，而不是长期规则
+- 内容需要强制执行
+- 内容已经可以从代码或 README 直接读到
+- 内容只影响某个目录
 
-这非常适合：
-- 你刚纠正完一个长期偏好
-- 你刚发现一个以后还会重复解释的规则
+对应处理方式：
+- 少数任务才用：做成 skill
+- 需要强制执行：用 permissions 或 hooks
+- 目录相关：放进 rules
+- 已有文档很完整：用 `@path` 导入或让 Claude 按需读取
 
-### `/memory`
-它是 memory 管理入口。
-
-适合：
-- 查看当前加载了哪些 memory
-- 编辑 `CLAUDE.md`
-- 管理 auto memory
-- 开关 auto memory
-
-## 十一、什么时候不该再往 `CLAUDE.md` 里塞东西
-下面这些情况，应该停手：
-
-### 1. 内容是流程，不是规则
-例如“发布前先做 A，再做 B，再做 C”。  
-这更像 skill，而不是常驻 memory。
-
-### 2. 内容只对一小块代码生效
-这更适合 path-scoped rule。
-
-### 3. 内容需要强制执行
-这更适合 settings / permissions / hooks。
-
-### 4. 内容太长，且不是每次都要看
-这更适合 skill 的支持文件。
-
-## 十二、这一章最容易混淆的几个点
-### `CLAUDE.md` vs settings
-- `CLAUDE.md` 是提示与说明
-- settings 是硬配置
-
-### `CLAUDE.md` vs skill
-- `CLAUDE.md` 是总在场的长期规则
-- skill 是按需调用的流程能力
-
-### `CLAUDE.md` vs auto memory
-- 前者你写
-- 后者 Claude 写
-
-### `CLAUDE.local.md` vs `~/.claude/CLAUDE.md`
-- 前者只影响当前项目
-- 后者影响你所有项目
-
-## 十三、建议你这样写第一版项目 memory
-最实用的骨架通常就这几块：
+## 十、最小可用写法
+如果你只想先写一版够用的 `CLAUDE.md`，用这个结构：
 
 ```md
-# 项目概览
-- 这是一个什么系统
-- 关键目录在哪
+# Project Overview
+- 这个项目解决什么问题
+- 核心代码目录在哪里
 
-# 开发命令
-- 安装
-- 启动
-- 测试
-- lint
+# Commands
+- 安装命令
+- 启动命令
+- 测试命令
+- 构建或检查命令
 
-# 编码约束
-- 命名
-- 风格
-- 目录放置原则
+# Conventions
+- 命名和目录规则
+- 重要技术选择
+- 不要使用的方案
 
-# 验证要求
-- 改完至少跑什么
-
-# 禁止事项
-- 哪些文件不要改
-- 哪些方案不要用
+# Verification
+- 改逻辑后跑什么
+- 改 UI 后怎么检查
+- 改配置后怎么确认
 ```
 
-先做到“短、准、能执行”，再逐步演化，不要一开始就写成百科全书。
+写完后问自己一句：如果一个新同事只读这份文件，能不能少踩最常见的坑？如果能，就够了。
 
-## 十四、和后续章节的关系
-- 第 5 章讲的是上下文负载，这一章讲的是“什么内容值得常驻”
-- 第 7 章会讲 settings，解释哪些东西不能只靠 memory
-- 第 8 章会讲 permissions，解释如何真正限制 Claude 能做什么
-- 第 11 到 15 章会继续展开 skills、subagents、hooks、MCP 等更强的扩展机制
+## 和后续章节的关系
+- 第 7 章讲 settings：哪些东西应该变成硬配置
+- 第 8 章讲 permissions：哪些行为应该被允许、询问或禁止
+- 第 9 章讲实践习惯：如何把 memory、权限和验证组合成稳定工作流
 
 ## 学完标准
-- 你能清楚区分 `CLAUDE.md`、auto memory、rules、settings、skills
-- 你知道 `.claude/` 目录不只是 memory，而是项目级控制中心
-- 你能写出一份不过长、但足够实用的项目 `CLAUDE.md`
-- 你知道什么时候该继续加 memory，什么时候该改用 rules / skills / hooks
+- 你知道 memory 是上下文输入，不是强制配置
+- 你能判断什么该写进 `CLAUDE.md`，什么该拆成 rules、skills 或 settings
+- 你能写出一份短而有用的项目 memory
+- 你不会再把 `.claude/` 目录简单理解成“记忆文件夹”

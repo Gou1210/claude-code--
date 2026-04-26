@@ -1,271 +1,210 @@
 # 7. Settings、Config 与作用域管理
 
 ## 重要程度
-**A 级** - 强烈建议掌握。它不如 memory 那么“天天可见”，但一旦不会配，项目共享、团队治理、权限默认值、环境变量注入都会很乱。
+**A 级** - 强烈建议掌握。Settings 决定 Claude Code 怎么运行、默认能做什么、哪些行为应该共享给团队。不会分层，项目配置很快会混乱。
 
 ## 学习目标
-- 建立 Claude Code 配置层的完整地图
-- 分清 `/config`、`claude config`、`settings.json`、环境变量分别干什么
-- 掌握用户级、项目级、本地项目级、组织级配置的边界
+- 分清 memory 和 settings 的职责
+- 知道用户级、项目级、本地项目级、组织级配置分别放什么
+- 能判断一项配置应该个人保存、提交到仓库，还是交给组织托管
 
-## 先纠正一个常见误区
-很多人把 Claude Code 的“配置”都理解成：
-- 进 `/config` 改几项开关
-- 或者在 `CLAUDE.md` 写点说明
+## 先建立一个场景
+你在团队项目里用 Claude Code，希望它：
+- 默认使用某个模型
+- 自动带上项目需要的环境变量
+- 允许跑测试和 lint
+- 禁止读敏感文件
+- 每次改完自动触发格式化 hook
 
-这两种理解都不完整。
+这些不应该写在聊天里，也不应该全塞进 `CLAUDE.md`。因为它们不是“知识”，而是 Claude Code 的运行边界。
 
-Claude Code 里至少有三类不同东西：
-- **提示与说明**：`CLAUDE.md`、rules、skills
-- **硬配置**：`settings.json`、managed settings、CLI flags、环境变量
-- **交互入口**：`/config`、`claude config ...`
+这就是 settings 要解决的问题。
 
-其中真正决定行为边界的，是第二类。
+## 一、先分清两句话
+`CLAUDE.md` 解决的是：
 
-## 学什么
-- `/config`
-- `claude config list/get/set/add/remove`
-- `~/.claude/settings.json`
-- `.claude/settings.json`
-- `.claude/settings.local.json`
-- managed settings
-- 环境变量与 CLI 参数
+**Claude 应该知道什么。**
 
-## 你需要掌握
-- `settings.json` 才是官方的层级化配置机制
-- `/config` 是配置入口，不是唯一配置存储
-- 有些全局 UI/交互偏好保存在 `~/.claude.json`，不在 `settings.json`
-- 项目共享配置和个人本地偏好应该分层，不要混写
-- CLI 参数是单次 session 覆盖
-- managed settings 优先级最高，通常不能被用户覆盖
+settings 解决的是：
 
-## 一、先建立“配置层次图”
-你可以把 Claude Code 的配置理解成五层，从低到高逐步覆盖：
+**Claude Code 应该如何运行。**
 
-1. 用户级 `~/.claude/settings.json`
-2. 项目级 `.claude/settings.json`
-3. 项目本地级 `.claude/settings.local.json`
-4. CLI 启动参数
-5. 组织级 managed settings
+例如：
+- “本项目后端在 `apps/api`”是 memory
+- “允许执行 `pnpm test`”是 settings
+- “不要引入新 UI 库”是 memory
+- “禁止读取 `.env`”是 permissions，也属于 settings 体系
+- “每次编辑后运行 formatter”是 hook，也属于 settings 体系
 
-截至 **2026-04-25**，官方文档给出的优先级是“从高到低”：
-- managed settings
-- command line arguments
-- `.claude/settings.local.json`
-- `.claude/settings.json`
-- `~/.claude/settings.json`
+只要涉及权限、环境变量、hooks、默认模式、模型、额外目录，就不要只靠 memory。
 
-所以不要想当然认为“命令行永远最大”。在 Claude Code 里，组织级托管策略可以压过命令行。
+## 二、配置层级怎么理解
+Claude Code 的配置不是一个文件说了算，而是多层叠加。
 
-## 二、`/config` 是入口，不是全部
-`/config` 的价值在于：
-- 查看当前主要配置状态
-- 修改常见设置
-- 在交互中快速切换模型、模式或偏好
+常见层级可以这样记：
+- 用户级：影响你所有项目
+- 项目级：跟着仓库走，团队共享
+- 项目本地级：只影响你当前机器上的这个项目
+- CLI 参数：只影响本次启动
+- 组织级 managed settings：企业或组织强制策略
 
-但它只是一个入口层。
+实际使用时，你不需要死记优先级，先问一个更重要的问题：
 
-你真正要理解的是：这些配置最终落在哪个文件、属于哪个作用域、是否应提交到仓库。
+**这条配置应该由谁承担？**
 
-所以，学习路径不要停在“会点 `/config`”。
+## 三、真实场景：哪些配置该提交到仓库
+适合放进项目级 `.claude/settings.json` 的，是团队希望所有人一致的行为。
 
-## 三、真正该记住的三个 settings 文件
-### 1. `~/.claude/settings.json`
-用户级全局配置。
+例如：
+- 常用测试命令 allowlist
+- 敏感路径 denylist
+- 项目默认 permission mode
+- 项目需要的共享环境变量
+- 团队统一 hooks
+- 允许 Claude 访问的项目内额外目录
+
+这类配置应该可审计、可复用、可讨论。新人 clone 仓库后，也应该得到同样的基础行为。
+
+反过来，不要把这些内容提交到项目级 settings：
+- 你的本地绝对路径
+- 你的个人 token
+- 你的临时实验开关
+- 只适合你机器的调试命令
+
+这些应该放进 `.claude/settings.local.json` 或你的用户级配置。
+
+## 四、三个最常见的 settings 文件
+### `~/.claude/settings.json`
+用户级配置。
 
 适合放：
-- 你在所有项目都想保留的默认偏好
-- 你的全局模型默认值
-- 通用通知、环境变量、权限偏好
+- 你所有项目都想保留的默认偏好
+- 通用环境变量
+- 通用通知配置
+- 个人常用权限偏好
 
-### 2. `.claude/settings.json`
+### `.claude/settings.json`
 项目共享配置。
 
 适合放：
-- 团队共享的权限规则
-- 项目默认模型
-- 共享 hooks
-- 项目统一环境变量
-- 团队约定的 `defaultMode`
+- 团队共享权限
+- 项目 hooks
+- 项目默认模式
+- 项目级环境变量
+- 应该提交到仓库的 Claude Code 行为
 
-这是应该随仓库提交的。
-
-### 3. `.claude/settings.local.json`
-项目本地私有配置。
+### `.claude/settings.local.json`
+项目本地配置。
 
 适合放：
-- 你自己在这个项目里的试验性设置
-- 个人本地路径
-- 本地调试临时默认值
-- 不适合提交到仓库的偏好
+- 本机路径
+- 临时试验
+- 个人例外
+- 不该提交的私有设置
 
-它通常应被 git ignore。
+这个文件通常应该被 git ignore。
 
-## 四、还有一个容易漏掉的文件：`~/.claude.json`
-官方文档指出，一部分 **全局交互/UI 配置** 存在 `~/.claude.json`，而不是 `settings.json`。
+## 五、`/config` 是入口，不是全部
+`/config` 很适合快速查看和修改常见选项，但它不是 Claude Code 配置系统的全部。
 
-比如部分版本里：
-- IDE 自动连接
-- IDE 扩展自动安装
-- 外部编辑器上下文偏好
+你真正要关心的是：
+- 改动最终落在哪个文件
+- 这个文件是不是会提交
+- 这项设置影响个人还是团队
+- 它是否会被 CLI 参数或 managed settings 覆盖
 
-这意味着：
-- 不是所有配置都在 `settings.json`
-- 遇到“明明在 `/config` 改了，但没写进你以为的那个文件”的情况，不要惊讶
+如果只会点 `/config`，但不知道作用域，很容易把团队规则改成个人偏好，或者把本地私有配置提交出去。
 
-## 五、哪些内容典型地属于 settings
-最值得优先掌握的有这几类：
+## 六、`claude config` 适合做什么
+CLI 配置命令适合检查和脚本化管理配置：
 
-### 1. 权限
-例如：
-- `permissions.allow`
-- `permissions.ask`
-- `permissions.deny`
-- `defaultMode`
-- `additionalDirectories`
+```bash
+claude config list
+claude config get <key>
+claude config set <key> <value>
+claude config add <key> <value>
+claude config remove <key> <value>
+```
 
-这是第 8 章的核心基础。
+它的价值不在于“多一个改配置的方法”，而在于你能明确看到某项配置当前是什么，而不是靠猜。
 
-### 2. 环境变量
-可以放在 `env` 里，为每次 session 注入固定环境变量。
+## 七、真实场景：个人和团队配置怎么分
+假设你在一个后端项目里工作。
 
-适合：
-- 团队统一的一组运行参数
-- Claude Code 本身需要的行为开关
+你个人想让 Claude 默认用某种输出风格，这应该放用户级。
 
-### 3. hooks
-Claude Code 支持在工具执行前后挂钩，这属于硬配置，不属于 memory。
+团队希望所有人都允许执行：
 
-### 4. model / outputStyle / statusLine
-这些决定的是 Claude Code 的默认行为和体验，而不是“提示词记忆”。
+```text
+pnpm test
+pnpm lint
+git status
+git diff
+```
 
-### 5. 插件、worktree、sandbox 相关设置
-这些更偏进阶，但本质上也属于 settings 层。
+这应该放项目级。
 
-## 六、什么时候该写进 settings，什么时候不该
-### 适合写进 settings 的
-- 需要程序层强制生效的行为
-- 团队共享的默认权限与安全策略
-- 运行时环境变量
-- 默认模型与模式
-- hooks、插件、工作目录扩展
+你本机有一个私有调试目录：
 
-### 不适合写进 settings 的
-- 编码规范说明
-- 项目背景介绍
-- 架构原则解释
-- 发布步骤文档
+```text
+C:\Users\you\local-fixtures
+```
 
-这些更适合 `CLAUDE.md` 或 skill。
+这应该放项目本地级，不应该提交。
 
-一句话：
+公司要求所有项目都禁止读取 secrets 目录，这应该放 managed settings，而不是让每个仓库自己约定。
 
-**settings 管“系统怎么运行”，memory 管“Claude 应该知道什么”。**
+## 八、哪些内容典型属于 settings
+最常见的是这几类：
 
-## 七、作用域管理的核心不是“文件位置”，而是“谁应该承担这个约束”
-这是很多团队配置混乱的根源。
+- 权限：allow、ask、deny、defaultMode
+- 路径：additionalDirectories
+- 环境变量：env
+- hooks：工具执行前后的自动动作
+- 模型和输出偏好：model、outputStyle、statusLine
+- 插件、MCP、sandbox 相关行为
 
-### 应该放用户级的
-- 只属于你个人的长期偏好
-- 所有项目通用，但不值得强推给团队的设置
+如果一项内容会影响 Claude Code 的实际运行方式，它大概率属于 settings。
 
-### 应该放项目级的
-- 团队所有人都该一致的行为
-- 与仓库绑定的权限、hooks、默认模型、共享目录规则
+## 九、几个常见错放案例
+### 把安全规则写进 `CLAUDE.md`
+问题：`CLAUDE.md` 只是提示，不能强制阻止。
 
-### 应该放项目本地级的
-- 只在你本机生效的试验配置
-- 本地路径、个人临时开关、未成熟方案
+更合适：写进 permissions、hooks 或 managed settings。
 
-### 应该放组织级 managed settings 的
-- 安全底线
-- 合规要求
-- 不允许被仓库作者绕开的企业策略
+### 把本地路径提交到项目级 settings
+问题：别人的机器上路径不存在，还会污染仓库。
 
-## 八、几个最常见的错放案例
-### 错放 1：把共享安全策略写进个人 settings
-问题：
-- 团队不一致
-- 新人接手即失效
+更合适：放 `.claude/settings.local.json`。
 
-正确做法：
-- 放到项目级或 managed settings
+### 把团队默认命令只放在个人配置
+问题：新人和其他协作者不会继承。
 
-### 错放 2：把个人本地路径提交到 `.claude/settings.json`
-问题：
-- 别人机器上失效
-- 配置污染仓库
+更合适：放 `.claude/settings.json`。
 
-正确做法：
-- 放到 `.claude/settings.local.json`
+### 用 CLI 参数承担长期规则
+问题：只对本次启动生效，不稳定也不可审计。
 
-### 错放 3：把“必须执行的禁止项”只写在 `CLAUDE.md`
-问题：
-- 它只是提示，不是强约束
+更合适：长期默认值放 settings，单次实验才用 CLI。
 
-正确做法：
-- 真要禁止，配 `permissions.deny`、managed settings 或 hooks
+## 十、最小配置分层原则
+你可以长期按这个规则判断：
 
-## 九、CLI 参数与 settings 的关系
-CLI 参数适合：
-- 一次性覆盖
-- 临时实验
-- 脚本化场景
+- 只属于我：用户级
+- 属于这个项目的所有人：项目级
+- 只属于我在这个项目的机器环境：项目本地级
+- 只影响这一次启动：CLI 参数
+- 组织安全底线：managed settings
 
-例如：
-- 临时切模型
-- 临时切 permission mode
-- 启动时加额外目录
+如果你拿不准，优先不要提交到仓库。先放 local，等团队确认后再提升到项目级。
 
-但它不适合承担长期团队约束，因为：
-- 不稳定
-- 不可审计
-- 不会自动共享给其他协作者
-
-所以：
-- 临时行为，用 CLI
-- 稳定默认值，用 settings
-
-## 十、建议你最先学会的几个命令
-### 交互入口
-- `/config`
-
-### CLI 管理入口
-- `claude config list`
-- `claude config get <key>`
-- `claude config set <key> <value>`
-- `claude config add <key> <value>`
-- `claude config remove <key> <value>`
-
-它们的价值不只是“会改”，更重要的是让你能明确地看见当前有效配置，而不是靠猜。
-
-## 十一、建议你在脑子里形成的“配置分层原则”
-最推荐的分法是：
-
-### 个人长期偏好
-放 `~/.claude/settings.json`
-
-### 团队共享默认值
-放 `.claude/settings.json`
-
-### 本地试验和个人例外
-放 `.claude/settings.local.json`
-
-### 企业强制底线
-放 managed settings
-
-### 单次会话覆盖
-用 CLI 参数
-
-如果你按这个原则配置，后面接权限、hooks、MCP、插件时就不容易混乱。
-
-## 十二、和前后章节的关系
-- 第 6 章解决“Claude 该知道什么”
-- 第 7 章解决“Claude Code 该如何运行”
-- 第 8 章会在这个基础上展开 permission modes、allow/ask/deny、sandbox 与 working directories
+## 十一、和前后章节的关系
+- 第 6 章讲 memory：让 Claude 知道项目信息
+- 第 7 章讲 settings：让 Claude Code 按正确方式运行
+- 第 8 章会继续展开 settings 里最关键的一部分：权限体系
 
 ## 学完标准
-- 你知道 `/config` 只是入口，不是完整配置系统
-- 你能区分 `settings.json`、`settings.local.json`、`~/.claude.json`
-- 你知道什么该放用户级，什么该放项目级，什么只能放 managed
-- 你不再把 memory 和 settings 混为一谈
+- 你能区分 memory 和 settings
+- 你知道哪些配置该个人保存，哪些该随仓库提交
+- 你不会把私有路径、个人 token 或临时实验提交到项目级 settings
+- 你能用“谁应该承担这条约束”来判断配置作用域
