@@ -196,6 +196,9 @@ Bash(pnpm build:*)
 | 代码太乱 | Refactor plan | 不要混入新需求 |
 | 改完了 | Review | 不要让实现者自己糊弄过关 |
 | 会话很长 | Handoff / compact | 不要硬拖 |
+| 想试一条不确定路线 | Checkpoint / `/rewind` | 不要靠手工复制文件回退 |
+| 搜索、审查、日志噪音太大 | Subagent | 不要把主会话塞脏 |
+| 想并行试方案或拆审查 | Worktree / Writer-Reviewer | 不要在同一工作区混改 |
 | 总是重复同一流程 | Skill | 不要每次复制长 prompt |
 | 必须阻止某事 | Hook / permission | 不要只写提示词 |
 | 要查外部系统 | MCP / plugin | 不要把外部事实靠猜 |
@@ -461,7 +464,175 @@ Test gap:
 - 目标已经变了
 - 上下文里混入太多无关内容
 
-## 8. 三个最小 Skills，直接照抄
+## 8. Checkpoints 与 `/rewind`：基础安全网
+
+适用：你要让 Claude 尝试一条不确定路线，或者已经改乱了，想回到之前状态。
+
+### 你要记住的边界
+
+- checkpoint 是 Claude Code 的试错安全网，不是 git 的替代品。
+- git 负责长期版本历史；checkpoint 负责会话中的短周期回退。
+- `/rewind` 适合撤回一次错误方向、恢复对话和代码状态、重新选择方案。
+- 高风险改动前仍然要看 `git status` 和 `git diff`。
+
+### 试错前 prompt
+
+```text
+这条方案不确定。
+请先明确当前状态和回退点：
+1. 当前目标
+2. 计划改哪些文件
+3. 如果失败，应该回退到哪里
+4. 成功的验证标准
+
+确认后再开始改。
+```
+
+### 改乱后 prompt
+
+```text
+当前实现方向不对。
+请停止继续修改，先总结：
+1. 从哪个步骤开始偏离
+2. 哪些改动应该保留
+3. 哪些改动应该回退
+4. 是否适合用 /rewind 回到上一个稳定点
+```
+
+### 什么时候用 `/rewind`
+
+- Claude 选错方案，继续修会越修越歪
+- 改动还没形成有价值的 diff
+- 你想恢复代码和对话到某个较早节点
+- 你要重新走 Plan，而不是在错误实现上补丁
+
+### 什么时候用 git
+
+- 已经产生一组有价值的文件改动
+- 需要精确保留部分文件、丢弃部分文件
+- 已经 commit 或准备 commit
+- 需要和远端或其他分支对齐
+
+## 9. Subagents：单兵上下文隔离工具
+
+Subagents 不是团队专属。单兵最常用的是把“高噪音任务”从主会话分出去，主会话只拿结论。
+
+### 适合派 subagent
+
+| 场景 | 目标 |
+| --- | --- |
+| 大范围代码搜索 | 找入口、调用链、影响面 |
+| 独立 review | 不受实现过程污染，只看风险 |
+| 长日志分析 | 从大量输出里提取根因 |
+| 多方案比较 | 并行调查不同方案 |
+| 测试失败排查 | 专门追失败链路 |
+
+### 不适合派 subagent
+
+- 你下一步立刻依赖它的结果，等它会阻塞主线
+- 任务边界模糊，不知道让它查什么
+- 改动高度耦合，容易和主会话冲突
+- 只是为了“显得高级”
+
+### 调查型 prompt
+
+```text
+请作为独立调查员，只调查不要改代码。
+目标：<问题>
+
+输出：
+1. 相关入口和调用链
+2. 关键文件
+3. 最可能的根因或改动点
+4. 证据
+5. 主会话下一步应该读哪些文件
+```
+
+### Review 型 prompt
+
+```text
+请作为独立 reviewer 审查当前 diff。
+不要参考实现过程，只看最终改动。
+
+重点：
+1. 行为回归
+2. 测试缺口
+3. 权限、安全、数据一致性
+4. 无关改动
+5. 需要阻断的 PR 意见
+```
+
+### 使用原则
+
+- 主会话负责决策和整合。
+- Subagent 负责调查、审查、提取证据。
+- 不要让多个 agent 改同一批文件。
+- subagent 返回后，先看证据，再决定是否采纳。
+
+## 10. Worktree 并行与 Writer/Reviewer 分离
+
+Worktree 并行是单兵提效工具，不是团队专属。它适合同时试两个方案，或者把实现和审查彻底隔离。
+
+### 适合用 worktree
+
+- 两个方案都可能成立，想并行试
+- 一个修 bug，一个补测试，互不影响
+- 想让 reviewer 在干净上下文里审查
+- 当前分支太乱，需要隔离一个实验分支
+
+### 不适合用 worktree
+
+- 你不熟 git worktree
+- 改动都集中在同一批文件
+- 任务很小，开 worktree 成本大于收益
+- 没有清晰命名和收尾习惯
+
+### 基本命令
+
+```bash
+git worktree add ../project-auth-fix -b auth-fix
+git worktree list
+git worktree remove ../project-auth-fix
+```
+
+如果 Claude Code 支持对应入口，也可以用：
+
+```bash
+claude --worktree feature-auth
+```
+
+具体命令以当前 `claude --help` 和本机版本为准。
+
+### Writer / Reviewer 分离
+
+Writer 会话：
+
+```text
+你是 writer。
+按方案实现，保持最小改动。
+不要做最终审查，只在结束时给 diff 概览和验证结果。
+```
+
+Reviewer 会话：
+
+```text
+你是 reviewer。
+不要参考 writer 的解释，先读取当前 diff。
+只找问题：回归、测试缺口、接口破坏、权限和数据风险。
+```
+
+### 收尾检查
+
+```text
+请帮我收尾这个 worktree：
+1. 当前分支和主分支差异
+2. 是否还有未提交改动
+3. 哪些改动值得保留
+4. 是否可以合并回主工作区
+5. 合并前必须跑哪些验证
+```
+
+## 11. 三个最小 Skills，直接照抄
 
 放置位置：
 
@@ -548,7 +719,7 @@ Output format:
 
 验收：你应该能用 `/catchup`、`/bugfix`、`/review` 触发稳定流程，而不是每次复制长 prompt。
 
-## 9. 最小 Hooks：先做两个
+## 12. 最小 Hooks：先做两个
 
 Hooks 不要一上来搞复杂。单兵先做通知和边界提醒。
 
@@ -623,7 +794,7 @@ exit 0
 
 注意：hook 脚本要先在你自己的项目里小范围试，不要一上来全局启用复杂拦截。
 
-## 10. MCP / Plugins 实操选择
+## 13. MCP / Plugins 实操选择
 
 ### 最小插件组合
 
@@ -690,7 +861,7 @@ Context7 + GitHub + Playwright + Vercel + Frontend Design
 - 外部系统权限风险很高
 - 你还没形成稳定工作流
 
-## 11. 权限配置实操
+## 14. 权限配置实操
 
 ### 个人开发推荐策略
 
@@ -735,7 +906,7 @@ Bash(rm -rf:*)
 
 规则以当前版本 `/permissions` 显示为准。遇到不确定命令，宁可 ask。
 
-## 12. 你的日常工作流
+## 15. 你的日常工作流
 
 ### 每天开始
 
@@ -781,7 +952,7 @@ Bash(rm -rf:*)
 5. reviewer 应重点看的文件
 ```
 
-## 13. 反模式和立即修正
+## 16. 反模式和立即修正
 
 | 反模式 | 立即修正 |
 | --- | --- |
@@ -794,7 +965,7 @@ Bash(rm -rf:*)
 | 反复提醒不要做某事 | 写 permission 或 hook |
 | 插件装完不用 | 卸载或禁用，减少工具面 |
 
-## 14. 后续学习路线
+## 17. 后续学习路线
 
 第一阶段：单兵稳定交付
 
@@ -802,6 +973,8 @@ Bash(rm -rf:*)
 - 写好全局和项目 `CLAUDE.md`
 - 会管理 memory
 - 会配置基础 permissions
+- 会用 checkpoints / `/rewind` 控制试错成本
+- 会用 subagents 隔离调查和 review
 - 会用 `catchup` / `bugfix` / `review`
 
 第二阶段：单兵扩展能力
@@ -810,7 +983,7 @@ Bash(rm -rf:*)
 - Hooks 生命周期
 - Context7 / GitHub / Playwright / Sentry
 - MCP scope 和 `.mcp.json`
-- Subagents 做高噪音搜索和独立 review
+- Worktree 并行和 Writer/Reviewer 分离
 
 第三阶段：团队专家
 
@@ -821,3 +994,101 @@ Bash(rm -rf:*)
 - Agent Teams
 - 插件分发
 
+## 18. 英文资料补充候选
+
+这一节先不展开，只保留后续用 AI 深挖时的线索。学完本手册后，可以让 AI 基于这些主题和来源补成第二版。
+
+### 1. Verification-first 工作流
+
+关键信息：不要只让 Claude “写完”，要让它带着测试、lint、build、截图、CLI 输出、预期结果一起自检。可以补成不同场景的验证菜单：后端、前端、CLI、文档、数据库迁移。
+
+关键词：
+
+```text
+Claude Code verification loop
+Claude Code best practices test lint screenshot build
+```
+
+来源：
+
+- <https://code.claude.com/docs/en/best-practices>
+- <https://support.claude.com/en/articles/14554000-claude-code-power-user-tips>
+
+### 2. 让 Claude 先 interview 你
+
+关键信息：大需求不要一次性写超长 prompt。让 Claude 先追问需求、边界、edge cases、tradeoffs，再生成 `SPEC.md`，之后新 session 按 spec 实现。
+
+关键词：
+
+```text
+Claude Code let Claude interview you SPEC.md
+Claude Code planning mode requirements interview
+```
+
+来源：
+
+- <https://code.claude.com/docs/en/best-practices>
+
+### 3. `CLAUDE.md` 高级组织法
+
+关键信息：`CLAUDE.md` 可以分层组织；根目录、home、子目录、本地文件承担不同职责。官方还支持用 `@path` 导入其他文件，适合把长内容拆开。
+
+关键词：
+
+```text
+Claude Code CLAUDE.md import @path
+Claude Code memory files CLAUDE.local.md
+```
+
+来源：
+
+- <https://code.claude.com/docs/en/best-practices>
+
+### 4. Hooks 进阶模式
+
+关键信息：除了通知和敏感文件提醒，还可以研究 `PostToolUse` 自动格式化、`Stop` 阻止测试失败时结束、`PreCompact` 或 session hooks 注入上下文。注意 hooks 会自动执行命令，安全风险比普通 prompt 高。
+
+关键词：
+
+```text
+Claude Code hooks PostToolUse Stop PreCompact
+Claude Code deterministic control hooks security
+```
+
+来源：
+
+- <https://code.claude.com/docs/en/hooks-guide>
+- <https://docs.anthropic.com/en/docs/claude-code/hooks>
+
+### 5. 不可信仓库、Hooks、MCP、Plugins 安全
+
+关键信息：不要随便信任陌生仓库里的 `.claude/settings.json`、hooks、`.mcp.json`、第三方插件和 marketplace。重点关注自动执行命令、环境变量、API key、MCP server、插件权限。
+
+关键词：
+
+```text
+Claude Code security hooks MCP plugins untrusted repositories
+Claude Code CVE project files API token exfiltration
+```
+
+来源：
+
+- <https://research.checkpoint.com/2026/rce-and-api-token-exfiltration-through-claude-code-project-files-cve-2025-59536/>
+- <https://github.com/trailofbits/skills>
+
+### 6. 官方与社区 Skills 仓库
+
+关键信息：后续学习 skill 时，不要只看文章，要看真实 skill 仓库怎么组织 `SKILL.md`、supporting files、scripts、description、allowed tools。
+
+关键词：
+
+```text
+Claude Code skills examples GitHub
+Claude Code SKILL.md supporting files scripts
+```
+
+来源：
+
+- <https://github.com/anthropics/skills>
+- <https://github.com/trailofbits/skills>
+- <https://github.com/obra/superpowers>
